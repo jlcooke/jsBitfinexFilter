@@ -53,10 +53,10 @@ function parseBook(book) {
 
 	var last = 0,
 		mid = 0;
-	book.sort(function(a,b){ return a[0]-b[0]; });
+	book.sort(function(a,b){ return b[0]-a[0]; });
 	// price, count, amount
 	for (var i in book) {
-		if (book[i][2] < 0  &&  last[2] > 0) {
+		if (book[i][2] > 0  &&  last[2] < 0) {
 			mid = (last[0] + book[i][0]) / 2;
 			break;
 		}
@@ -79,6 +79,7 @@ function parseBook(book) {
 			ret.buy.push( b );
 		}
 	}
+	ret.sell.sort(function(a,b){ return a[0]-b[0]; });
 
 	cleanPastOffers();
 
