@@ -1,0 +1,216 @@
+<style type="text/css">
+tbody td { text-align:right; }
+</style>
+<script
+  src="//code.jquery.com/jquery-3.2.1.min.js"
+  integrity="sha256-hwg4gsxgFZhOsEEamdOYGBf13FyQuiTwlAQgxVSNgt4="
+  crossorigin="anonymous"></script>
+<script>
+
+var options = {
+	minage: 15,
+	floor: 1,
+	len: 25
+}
+
+var past_offers = {},
+	current_offers = {};;
+function getAge(price, amount) {
+	var key = price +' '+ amount;
+	current_offers[key] = 1;
+	if (!past_offers[key]) {
+		return 0;
+	}
+	var ret = (new Date()).getTime() - past_offers[key];
+	ret = (ret/1000).toFixed(2);
+	return ret;
+}
+function updateAge(price, amount) {
+	if (past_offers[price +' '+ amount])
+		return;
+	past_offers[price +' '+ amount] = (new Date()).getTime();
+}
+function cleanPastOffers() {
+	for (var key in past_offers) {
+		if (!current_offers[key])
+			delete past_offers[key];
+	}
+	current_offers = {};
+}
+
+function toTime(seconds) {
+	return seconds;
+}
+function parseBook(book) {
+	var ret = {
+		mid: 0,
+		buy: [],
+		sell: []
+	};
+
+	if (book[0] == 'error')
+		return ret;
+
+	var last = 0,
+		mid = 0;
+	// price, count, amount
+	for (var i in book) {
+		if (book[i][2] < 0  &&  last[2] > 0) {
+			mid = (last[0] + book[i][0]) / 2;
+			break;
+		}
+		last = book[i];
+	}
+	ret.mid = mid;
+
+	var maxage = 1;
+	for (var i in book) {
+		var b = book[i];
+		b[3] = getAge(b[0], b[2]);
+		b[4] = ( (mid - b[0])/mid *100 ).toFixed(2);
+
+		updateAge(b[0], b[2]);
+		if (b[3]) maxage = b[3]<maxage ? maxage : b[3];
+
+		if (b[2] < 0) {
+			ret.sell.push( b );
+		} else {
+			ret.buy.push( b );
+		}
+	}
+
+	cleanPastOffers();
+
+	return ret;
+}
+
+
+$(document).ready(function() {
+	var callback = 'cb'+ (new Date()).getTime();
+
+	function kickoff() {
+		options.len = $('select[name=len]').val();
+		options.floor = $('select[name=floor]').val();
+		options.minage = $('select[name=minage]').val();
+
+		$.ajax({
+			url: 'https://api.bitfinex.com/v2/book/tBTCUSD/P0?len='+options.len,
+			success: function(R) {
+				document[callback]( parseBook(R) );
+			}
+		});
+	};
+
+	document[callback] = function(R){
+		$('#mid').html('$'+ R.mid.toFixed(2));
+
+		var html = '';
+		for (var i in R.buy) {
+			var t = R.buy[i];
+			otm = (R.mid-t[0])/R.mid *100;
+			html += '<tr><td>'+ t[0].toFixed(2) +'</td><td class="amount">'+ t[2].toFixed(2) +'</td><td>'+ (t[0]*t[2]).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g,',') +'</td><td>'+ otm.toFixed(2) +'</td><td age='+t[3]+'>'+ toTime(t[3]) +'</td></tr>';
+		}
+		$('#buy tbody').html(html);
+
+		html = '';
+		for (var i in R.sell) {
+			var t = R.sell[i];
+			otm = (R.mid-t[0])/R.mid *100;
+			html += '<tr><td>'+ t[0].toFixed(2) +'</td><td class="amount">'+ t[2].toFixed(2) +'</td><td>'+ (t[0]*t[2]).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g,',') +'</td><td>'+ otm.toFixed(2) +'</td><td age='+t[3]+'>'+ toTime(t[3]) +'</td></tr>';
+		}
+		$('#sell tbody').html(html);
+
+		$('td.amount').each(function(a,b){
+			var val = Math.abs( $(b).html() );
+			if (val > 100)
+				$(b).closest('tr').css({fontWeight:'bold', backgroundColor:'#fbb'});
+			else if (val > 50)
+				$(b).closest('tr').css({fontWeight:'bold', backgroundColor:'#fdd'});
+			else if (val > 20)
+				$(b).closest('tr').css({fontWeight:'bold', backgroundColor:'#fee'});
+			else if (val > 10)
+				$(b).closest('tr').css({fontWeight:'bold'});
+			else if (val < options.floor)
+				$(b).closest('tr').remove();
+		});
+		$('td[age]').each(function(a,b){
+			var val = 1 * $(b).attr('age');
+			if (val < options.minage)
+				$(b).closest('tr').css({color:'#ccc'});
+		});
+
+		setTimeout(kickoff, 2000);
+	};
+
+	kickoff();
+});
+</script>
+
+<h1>Bitfinex Orderbook jsFilter</h2>
+<table><tr><td valign=top>
+<h2>Mid Price:</h2> <span id=mid style="font-size:24px; font-weight:bold; margin-left:50px;"></span>
+</td>
+<td valign=top>
+ <select name=len>
+  <option value=25>25 Buy/Sell Orders</option>
+  <option value=50 SELECTED>50 Buy/Sell Orders</option>
+  <option value=100>100 Buy/Sell Orders</option>
+  <option value=150>150 Buy/Sell Orders</option>
+ </select><br>
+ <select name=floor>
+  <option value=0>Show all Order Sizes</option>
+  <option value=1 SELECTED>Show Orders &gt;1 BTC</option>
+  <option value=2>Show Orders &gt;2 BTC</option>
+  <option value=3>Show Orders &gt;3 BTC</option>
+  <option value=5>Show Orders &gt;5 BTC</option>
+  <option value=10>Show Orders &gt;10 BTC</option>
+ </select><br>
+ <select name=minage>
+  <option value=0>Show all Order Ages</option>
+  <option value=5>Fuzz Orders &lt;5sec old</option>
+  <option value=10>Fuzz Orders &lt;10sec old</option>
+  <option value=30 SELECTED>Fuzz Orders &lt;30sec old</option>
+  <option value=60>Fuzz Orders &lt;60sec old</option>
+ </select><br>
+</td></tr>
+<tr><td valign=top>
+<h2>Buy:</h2> <table id=buy cellpadding=2 cellspacing=0 border=1>
+<thead>
+ <tr>
+  <th>Price</th>
+  <th>Amount</th>
+  <th>Total</th>
+  <th title="Out of The Money (% diff from MidPrice)" style="text-decoration:underline;">OTM %</th>
+  <th>Age</th>
+ </tr>
+</thead>
+<tbody>
+</tbody>
+</table>
+
+</td>
+<td valign=top>
+
+<h2>Sell:</h2> <table id=sell cellpadding=2 cellspacing=0 border=1>
+<thead>
+ <tr>
+  <th>Price</th>
+  <th>Amount</th>
+  <th>Total</th>
+  <th title="Out of The Money (% diff from MidPrice)" style="text-decoration:underline;">OTM %</th>
+  <th>Age</th>
+ </tr>
+</thead>
+<tbody>
+</tbody>
+</table>
+
+</table>
+<b>Legand:</b><br/>
+<span style="color:#ccc">Fuzzed Order: not aged enough yet</span><br>
+<span style="font-weight:bold">Order size &gt; 10BTC</span><br>
+<span style="font-weight:bold; background-color:#fee;">Order size &gt; 20BTC</span><br>
+<span style="font-weight:bold; background-color:#fdd;">Order size &gt; 50BTC</span><br>
+<span style="font-weight:bold; background-color:#fbb;">Order size &gt; 100BTC</span><br>
+<br>
+<a href="https://github.com/jlcooke/jsBitfinexFilter">https://github.com/jlcooke/jsBitfinexFilter</a>
